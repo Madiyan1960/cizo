@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Электронная очередь</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .header-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin: 0;
+            color: var(--text);
+            text-align: center;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: #e2e8f0;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 16px;
+        }
+
+        .card-list {
+            padding: 16px;
+        }
+
+        .list-date-header {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--primary);
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--card-bg);
+        }
+
+        .queue-list-scroll {
+            max-height: 70vh;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .queue-list-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .queue-list-scroll::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .queue-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .queue-item:last-child {
+            border-bottom: none;
+        }
+
+        .queue-num {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: var(--primary);
+            margin-right: 14px;
+            min-width: 36px;
+        }
+
+        .queue-info {
+            flex-grow: 1;
+        }
+
+        .queue-name {
+            font-size: 1.3rem; 
+            font-weight: bold;
+            color: var(--text);
+            line-height: 1.1;
+            text-transform: capitalize;
+        }
+
+        .empty-msg {
+            text-align: center;
+            color: #94a3b8;
+            padding: 24px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="header-row">
+        <h1>📋 Электронная очередь</h1>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">Сегодня</button>
+        <button class="tab-btn" id="tabTomorrow" onclick="switchTab('tomorrow')">Завтра</button>
+    </div>
+
+    <div class="card card-list">
+        <div class="list-date-header">
+            <span id="listDateDisplay">📅 ...</span>
+        </div>
+        
+        <div class="queue-list-scroll">
+            <div id="queueList"><div class="empty-msg">Загрузка данных...</div></div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyAxYYpIj3Gu5Kvxv971xbgGneDEt2HP3A4",
+        authDomain: "queueapp-e3f57.firebaseapp.com",
+        databaseURL: "https://queueapp-e3f57-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "queueapp-e3f57",
+        storageBucket: "queueapp-e3f57.firebasestorage.app",
+        messagingSenderId: "648656253392",
+        appId: "1:648656253392:web:33bc978a24e23d4a9f89d5"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let currentTab = 'today';
+    let currentData = { todayList: [], tomorrowList: [] };
+    let HOLIDAYS = [];
+
+    window.onload = function() {
+        initDatabaseListeners();
+    };
+
+    function initDatabaseListeners() {
+        db.ref('settings/holidays').on('value', (snapshot) => {
+            const val = snapshot.val();
+            HOLIDAYS = val ? Object.values(val) : [];
+            HOLIDAYS.sort();
+            render();
+        });
+
+        db.ref('queue').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+
+            const dates = getQueueDates();
+            const rawToday = data[dates.today] ? Object.values(data[dates.today]) : [];
+            const rawTomorrow = data[dates.tomorrow] ? Object.values(data[dates.tomorrow]) : [];
+
+            rawToday.sort((a, b) => Number(a.number) - Number(b.number));
+            rawTomorrow.sort((a, b) => Number(a.number) - Number(b.number));
+
+            currentData = {
+                todayList: rawToday,
+                tomorrowList: rawTomorrow
+            };
+
+            render();
+        });
+    }
+
+    function isNonWorkingDay(date) {
+        const day = date.getDay();
+        const isoString = date.toISOString().split('T')[0];
+        return day === 0 || day === 6 || HOLIDAYS.includes(isoString);
+    }
+
+    function getNextWorkingDate(startDate) {
+        let date = new Date(startDate);
+        date.setDate(date.getDate() + 1);
+        while (isNonWorkingDay(date)) {
+            date.setDate(date.getDate() + 1);
+        }
+        return date;
+    }
+
+    function getQueueDates() {
+        let todayDate = new Date();
+        while (isNonWorkingDay(todayDate)) {
+            todayDate.setDate(todayDate.getDate() + 1);
+        }
+        let tomorrowDate = getNextWorkingDate(todayDate);
+
+        return {
+            today: todayDate.toISOString().split('T')[0],
+            tomorrow: tomorrowDate.toISOString().split('T')[0],
+            todayObj: todayDate,
+            tomorrowObj: tomorrowDate
+        };
+    }
+
+    function updateListDateDisplay() {
+        const dates = getQueueDates();
+        const targetDate = currentTab === 'today' ? dates.todayObj : dates.tomorrowObj;
+        const options = { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' };
+        const formattedDate = targetDate.toLocaleDateString('ru-RU', options);
+        document.getElementById('listDateDisplay').innerText = `📅 ${formattedDate}`;
+    }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        document.getElementById('tabToday').classList.toggle('active', tab === 'today');
+        document.getElementById('tabTomorrow').classList.toggle('active', tab === 'tomorrow');
+        render();
+    }
+
+    function render() {
+        updateListDateDisplay();
+
+        const listKey = currentTab === 'today' ? 'todayList' : 'tomorrowList';
+        const list = currentData[listKey] || [];
+        const container = document.getElementById('queueList');
+
+        if (list.length === 0) {
+            container.innerHTML = `<div class="empty-msg">Очередь на этот день пуста</div>`;
+            return;
+        }
+
+        container.innerHTML = list.map(item => `
+            <div class="queue-item">
+                <div class="queue-num">${item.number}</div>
+                <div class="queue-info">
+                    <div class="queue-name">${item.name}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+</script>
+
+</body>
+</html>
