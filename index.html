@@ -27,40 +27,40 @@
             max-width: 500px;
         }
 
-        .header-row {
-            display: flex;
-            justify-content: center;
-            align-items: center;
+        .header-title {
+            text-align: center;
             margin-bottom: 16px;
         }
 
-        h1 {
+        .header-title h1 {
             font-size: 1.4rem;
             margin: 0;
             color: var(--text);
-            text-align: center;
         }
 
-        .tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
+        /* 📅 Вкладки переключения дней */
+        .tabs { 
+            display: flex; 
+            gap: 8px; 
+            margin-bottom: 16px; 
         }
 
         .tab-btn {
             flex: 1;
-            padding: 12px;
+            padding: 12px 8px;
             border: none;
             background: #e2e8f0;
             border-radius: 8px;
             font-weight: bold;
             cursor: pointer;
             transition: all 0.2s;
+            font-size: 1rem;
+            color: #475569;
         }
 
-        .tab-btn.active {
-            background: var(--primary);
-            color: white;
+        .tab-btn.active { 
+            background: var(--primary); 
+            color: white; 
         }
 
         .card {
@@ -71,71 +71,62 @@
             margin-bottom: 16px;
         }
 
-        .card-list {
-            padding: 16px;
-        }
-
         .list-date-header {
             font-size: 1.1rem;
             font-weight: 700;
             color: var(--primary);
-            padding-bottom: 8px;
+            padding-bottom: 10px;
             border-bottom: 2px solid #e2e8f0;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: var(--card-bg);
         }
 
-        .queue-list-scroll {
-            max-height: 70vh;
-            overflow-y: auto;
-            padding-right: 4px;
-        }
-
-        .queue-list-scroll::-webkit-scrollbar {
-            width: 6px;
-        }
-        .queue-list-scroll::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 3px;
+        .queue-list-scroll { 
+            max-height: 70vh; 
+            overflow-y: auto; 
+            padding-right: 4px; 
         }
 
         .queue-item {
             display: flex;
+            justify-content: space-between;
             align-items: center;
             padding: 10px 0;
             border-bottom: 1px solid #f1f5f9;
         }
 
-        .queue-item:last-child {
-            border-bottom: none;
-        }
-
         .queue-num {
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             font-weight: bold;
             color: var(--primary);
-            margin-right: 14px;
+            margin-right: 12px;
             min-width: 36px;
         }
 
-        .queue-info {
-            flex-grow: 1;
+        .queue-info { 
+            flex-grow: 1; 
         }
 
         .queue-name {
-            font-size: 1.3rem; 
+            font-size: 1.25rem; 
             font-weight: bold;
             color: var(--text);
-            line-height: 1.1;
+            line-height: 1.2;
             text-transform: capitalize;
         }
 
-        .empty-msg {
-            text-align: center;
-            color: #94a3b8;
-            padding: 24px 0;
+        .queue-note {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 3px;
+        }
+
+        .empty-msg { 
+            text-align: center; 
+            color: #94a3b8; 
+            padding: 24px 0; 
+            font-size: 0.95rem;
         }
     </style>
 </head>
@@ -143,27 +134,30 @@
 
 <div class="container">
 
-    <div class="header-row">
+    <div class="header-title">
         <h1>📋 Электронная очередь</h1>
     </div>
 
+    <!-- 📅 ВКЛАДКИ -->
     <div class="tabs">
         <button class="tab-btn active" id="tabToday" onclick="switchTab('today')">Сегодня</button>
         <button class="tab-btn" id="tabTomorrow" onclick="switchTab('tomorrow')">Завтра</button>
     </div>
 
-    <div class="card card-list">
+    <!-- 📋 СПИСОК ОЧЕРЕДИ -->
+    <div class="card">
         <div class="list-date-header">
             <span id="listDateDisplay">📅 ...</span>
         </div>
         
         <div class="queue-list-scroll">
-            <div id="queueList"><div class="empty-msg">Загрузка данных...</div></div>
+            <div id="queueList"><div class="empty-msg">Загрузка списка...</div></div>
         </div>
     </div>
 
 </div>
 
+<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
@@ -184,12 +178,14 @@
     let currentTab = 'today';
     let currentData = { todayList: [], tomorrowList: [] };
     let HOLIDAYS = [];
+    let WORKDAYS = [];
 
     window.onload = function() {
         initDatabaseListeners();
     };
 
     function initDatabaseListeners() {
+        // Загрузка праздничных дней
         db.ref('settings/holidays').on('value', (snapshot) => {
             const val = snapshot.val();
             HOLIDAYS = val ? Object.values(val) : [];
@@ -197,8 +193,18 @@
             render();
         });
 
+        // Загрузка рабочих переносов
+        db.ref('settings/workdays').on('value', (snapshot) => {
+            const val = snapshot.val();
+            WORKDAYS = val ? Object.values(val) : [];
+            WORKDAYS.sort();
+            render();
+        });
+
+        // Загрузка списков очереди в реальном времени
         db.ref('queue').on('value', (snapshot) => {
             const data = snapshot.val() || {};
+            cleanupAndRotateQueue(data);
 
             const dates = getQueueDates();
             const rawToday = data[dates.today] ? Object.values(data[dates.today]) : [];
@@ -207,21 +213,27 @@
             rawToday.sort((a, b) => Number(a.number) - Number(b.number));
             rawTomorrow.sort((a, b) => Number(a.number) - Number(b.number));
 
-            currentData = {
-                todayList: rawToday,
-                tomorrowList: rawTomorrow
-            };
-
+            currentData = { todayList: rawToday, tomorrowList: rawTomorrow };
             render();
         });
     }
 
+    // 📅 Проверка на нерабочий день
     function isNonWorkingDay(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const dayNum = String(date.getDate()).padStart(2, '0');
+        const localIsoString = `${year}-${month}-${dayNum}`;
+
+        if (WORKDAYS.includes(localIsoString)) {
+            return false;
+        }
+
         const day = date.getDay();
-        const isoString = date.toISOString().split('T')[0];
-        return day === 0 || day === 6 || HOLIDAYS.includes(isoString);
+        return day === 0 || day === 6 || HOLIDAYS.includes(localIsoString);
     }
 
+    // 📅 Получение следующего рабочего дня
     function getNextWorkingDate(startDate) {
         let date = new Date(startDate);
         date.setDate(date.getDate() + 1);
@@ -231,18 +243,23 @@
         return date;
     }
 
+    // 📅 Расчет дат
     function getQueueDates() {
-        let todayDate = new Date();
-        while (isNonWorkingDay(todayDate)) {
-            todayDate.setDate(todayDate.getDate() + 1);
-        }
-        let tomorrowDate = getNextWorkingDate(todayDate);
+        const realToday = new Date();
+        const nextWorkingDay = getNextWorkingDate(realToday);
+
+        const formatDate = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const dayNum = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${dayNum}`;
+        };
 
         return {
-            today: todayDate.toISOString().split('T')[0],
-            tomorrow: tomorrowDate.toISOString().split('T')[0],
-            todayObj: todayDate,
-            tomorrowObj: tomorrowDate
+            today: formatDate(realToday),
+            tomorrow: formatDate(nextWorkingDay),
+            todayObj: realToday,
+            tomorrowObj: nextWorkingDay
         };
     }
 
@@ -250,8 +267,18 @@
         const dates = getQueueDates();
         const targetDate = currentTab === 'today' ? dates.todayObj : dates.tomorrowObj;
         const options = { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' };
-        const formattedDate = targetDate.toLocaleDateString('ru-RU', options);
-        document.getElementById('listDateDisplay').innerText = `📅 ${formattedDate}`;
+
+        document.getElementById('listDateDisplay').innerText = `📅 ${targetDate.toLocaleDateString('ru-RU', options)}`;
+    }
+
+    // 🧹 Автоматическая ротация и стирание прошлых записей
+    function cleanupAndRotateQueue(data) {
+        const dates = getQueueDates();
+        for (const dateKey in data) {
+            if (dateKey < dates.today) {
+                db.ref('queue/' + dateKey).remove();
+            }
+        }
     }
 
     function switchTab(tab) {
@@ -261,6 +288,7 @@
         render();
     }
 
+    // 📋 Отображение списка
     function render() {
         updateListDateDisplay();
 
@@ -278,6 +306,7 @@
                 <div class="queue-num">${item.number}</div>
                 <div class="queue-info">
                     <div class="queue-name">${item.name}</div>
+                    <div class="queue-note">⏱️ Записан: ${item.note || '—'}</div>
                 </div>
             </div>
         `).join('');
